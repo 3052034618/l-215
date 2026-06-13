@@ -1,0 +1,252 @@
+@use '@/styles/variables.scss' as *;
+
+.page {
+  min-height: 100vh;
+  background: $color-bg-page;
+  padding-bottom: 180rpx;
+}
+
+.statusHeader {
+  background: linear-gradient(135deg, $color-primary 0%, $color-primary-light 100%);
+  padding: $spacing-xl $spacing-lg 80rpx;
+  color: $color-text-white;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+.statusText {
+  font-size: $font-size-xxl;
+  font-weight: $font-weight-bold;
+  margin-bottom: $spacing-xs;
+}
+
+.statusDesc {
+  font-size: $font-size-sm;
+  opacity: 0.9;
+}
+
+.assetCard {
+  margin: -48rpx $page-padding 0;
+  background: $color-bg-card;
+  border-radius: $radius-lg;
+  padding: $spacing-lg;
+  box-shadow: $shadow-float;
+  display: flex;
+  align-items: center;
+}
+
+.assetImage {
+  width: 120rpx;
+  height: 120rpx;
+  border-radius: $radius-md;
+  margin-right: $spacing-md;
+  background: $color-bg-hover;
+  flex-shrink: 0;
+}
+
+.assetInfo {
+  flex: 1;
+  min-width: 0;
+}
+
+.assetName {
+  font-size: $font-size-lg;
+  font-weight: $font-weight-semibold;
+  color: $color-text-primary;
+  @include text-ellipsis;
+  margin-bottom: $spacing-xs;
+}
+
+.assetDesc {
+  font-size: $font-size-sm;
+  color: $color-text-secondary;
+  @include text-ellipsis;
+}
+
+.section {
+  margin: $spacing-lg $page-padding 0;
+  background: $color-bg-card;
+  border-radius: $radius-md;
+  padding: $spacing-lg;
+  box-shadow: $shadow-card;
+}
+
+.sectionTitle {
+  font-size: $font-size-md;
+  font-weight: $font-weight-semibold;
+  color: $color-text-primary;
+  margin-bottom: $spacing-md;
+}
+
+.infoList {
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-md;
+}
+
+.infoItem {
+  display: flex;
+  font-size: $font-size-sm;
+}
+
+.infoLabel {
+  width: 140rpx;
+  flex-shrink: 0;
+  color: $color-text-tertiary;
+}
+
+.infoValue {
+  flex: 1;
+  color: $color-text-primary;
+}
+
+.purposeContent {
+  font-size: $font-size-sm;
+  color: $color-text-primary;
+  line-height: 1.6;
+  background: $color-bg-hover;
+  padding: $spacing-md;
+  border-radius: $radius-sm;
+}
+
+.timeLine {
+  position: relative;
+  padding-left: 40rpx;
+}
+
+.timeLine::before {
+  content: '';
+  position: absolute;
+  left: 12rpx;
+  top: 8rpx;
+  bottom: 8rpx;
+  width: 4rpx;
+  background: $color-border;
+  border-radius: 2rpx;
+}
+
+.timeLineItem {
+  position: relative;
+  padding-bottom: $spacing-lg;
+
+  &:last-child {
+    padding-bottom: 0;
+  }
+
+  &::before {
+    content: '';
+    position: absolute;
+    left: -34rpx;
+    top: 8rpx;
+    width: 20rpx;
+    height: 20rpx;
+    background: $color-bg-card;
+    border: 4rpx solid $color-primary;
+    border-radius: 50%;
+    z-index: 1;
+  }
+
+  &.done::before {
+    background: $color-primary;
+  }
+
+  &.current::before {
+    box-shadow: 0 0 0 8rpx rgba(22, 93, 255, 0.15);
+    background: $color-primary;
+  }
+}
+
+.timeLineTime {
+  font-size: $font-size-xs;
+  color: $color-text-tertiary;
+  margin-bottom: 4rpx;
+}
+
+.timeLineTitle {
+  font-size: $font-size-sm;
+  color: $color-text-primary;
+  font-weight: $font-weight-medium;
+}
+
+.timeLineDesc {
+  font-size: $font-size-xs;
+  color: $color-text-tertiary;
+  margin-top: 4rpx;
+}
+
+.bottomBar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: $color-bg-card;
+  padding: $spacing-md $page-padding;
+  padding-bottom: calc(#{$spacing-md} + env(safe-area-inset-bottom));
+  box-shadow: 0 -4rpx 16rpx rgba(0, 0, 0, 0.06);
+  display: flex;
+  gap: $spacing-md;
+}
+
+.primaryBtn {
+  @include button-reset;
+  flex: 1;
+  height: $button-height-lg;
+  background: linear-gradient(135deg, $color-primary 0%, $color-primary-light 100%);
+  color: $color-text-white;
+  font-size: $font-size-md;
+  font-weight: $font-weight-semibold;
+  border-radius: $radius-button;
+  transition: all $transition-base;
+
+  &:active {
+    opacity: 0.9;
+  }
+}
+
+.secondaryBtn {
+  @include button-reset;
+  flex: 1;
+  height: $button-height-lg;
+  background: $color-bg-hover;
+  color: $color-text-primary;
+  font-size: $font-size-md;
+  font-weight: $font-weight-medium;
+  border-radius: $radius-button;
+  transition: all $transition-base;
+
+  &:active {
+    opacity: 0.8;
+  }
+}
+
+.dangerBtn {
+  @include button-reset;
+  flex: 1;
+  height: $button-height-lg;
+  background: rgba(245, 63, 63, 0.1);
+  color: $color-error;
+  font-size: $font-size-md;
+  font-weight: $font-weight-medium;
+  border-radius: $radius-button;
+  transition: all $transition-base;
+
+  &:active {
+    opacity: 0.8;
+  }
+}
+
+.damagePhotos {
+  display: flex;
+  gap: $spacing-sm;
+  flex-wrap: wrap;
+  margin-top: $spacing-md;
+}
+
+.damagePhoto {
+  width: 160rpx;
+  height: 160rpx;
+  border-radius: $radius-sm;
+  background: $color-bg-hover;
+}

@@ -1,32 +1,50 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, Image, Button } from '@tarojs/components';
+import React, { useState, useMemo } from 'react';
+import { View, Text, Image, Button, Textarea, ScrollView, Picker } from '@tarojs/components';
 import Taro, { useRouter, useDidShow } from '@tarojs/taro';
-import { bookings } from '@/data/bookings';
+import classnames from 'classnames';
 import StatusBadge from '@/components/StatusBadge';
 import { getBookingStatusText, getLocationName } from '@/utils/format';
-import { Booking } from '@/types/booking';
+import { formatDate } from '@/utils/date';
+import { useBookingStore } from '@/store';
 import styles from './index.module.scss';
 
 const BookingDetailPage: React.FC = () => {
   const router = useRouter();
-  const [booking, setBooking] = useState<Booking | null>(null);
+  const bookingId = router.params.id as string;
 
-  useEffect(() => {
-    const id = router.params.id;
-    const found = bookings.find((b) => b.id === id);
-    if (found) {
-      setBooking(found);
-    }
-  }, [router.params.id]);
+  const [showModifyModal, setShowModifyModal] = useState(false);
+  const [modifyDate, setModifyDate] = useState('');
+  const [modifyStartTime, setModifyStartTime] = useState('');
+  const [modifyEndTime, setModifyEndTime] = useState('');
+  const [modifyPurpose, setModifyPurpose] = useState('');
+  const [showDamageModal, setShowDamageModal] = useState(false);
+  const [damageDesc, setDamageDesc] = useState('');
+  const [damagePhotos, setDamagePhotos] = useState<string[]>([]);
+
+  const { bookings, pickupBooking, returnBooking, cancelBooking, updateBooking, generateTimeSlots, isDateBlacklisted, isAssetAvailable } = useBookingStore();
+
+  const booking = useMemo(() => {
+    return bookings.find(b => b.id === bookingId) || null;
+  }, [bookings, bookingId]);
+
+  const modifyTimeSlots = useMemo(() => {
+    if (!modifyDate || !booking) return [];
+    return generateTimeSlots(modifyDate, booking.assetId);
+  }, [modifyDate, booking, generateTimeSlots]);
 
   useDidShow(() => {
-    console.log('[BookingDetail] page show, bookingId:', router.params.id);
+    console.log('[BookingDetail] page show, bookingId:', bookingId);
   });
 
   const handlePickup = () => {
     Taro.scanCode({
       success: () => {
-        Taro.showToast({ title: '领取成功', icon: 'success' });
+        const success = pickupBooking(bookingId);
+        if (success) {
+          Taro.showToast({ title: '领取成功', icon: 'success' });
+        } else {
+          Taro.showToast({ title: '领取失败', icon: 'none' });
+        }
       },
       fail: () => {
         Taro.showToast({ title: '扫码取消', icon: 'none' });
@@ -39,14 +57,19 @@ const BookingDetailPage: React.FC = () => {
       success: () => {
         Taro.showModal({
           title: '设备状态',
-          content: '设备是否完好？如有损坏请上报',
+          content: '设备是否完好？',
           confirmText: '完好',
           cancelText: '有损坏',
           success: (res) => {
             if (res.confirm) {
-              Taro.showToast({ title: '归还成功', icon: 'success' });
+              const success = returnBooking(bookingId);
+              if (success) {
+                Taro.showToast({ title: '归还成功', icon: 'success' });
+              } else {
+                Taro.showToast({ title: '归还失败', icon: 'none' });
+              }
             } else {
-              Taro.showToast({ title: '请填写损坏报告', icon: 'none' });
+              setShowDamageModal(true);
             }
           }
         });
@@ -57,28 +80,124 @@ const BookingDetailPage: React.FC = () => {
     });
   };
 
+  const handleDamageSubmit = () => {
+    if (!damageDesc.trim()) {
+      Taro.showToast({ title: '请填写损坏描述', icon: 'none' });
+      return;
+    }
+
+    const success = returnBooking(bookingId, damageDesc.trim(), damagePhotos);
+    if (success) {
+      Taro.showToast({ title: '归还成功，损坏已记录', icon: 'success' });
+      setShowDamageModal(false);
+      setDamageDesc('');
+      setDamagePhotos([]);
+    } else {
+      Taro.showToast({ title: '归还失败', icon: 'none' });
+    }
+  };
+
+  const handleUploadPhoto = () => {
+    Taro.chooseImage({
+      count: 3 - damagePhotos.length,
+      success: (res) => {
+        setDamagePhotos([...damagePhotos, ...res.tempFilePaths]);
+      }
+    });
+  };
+
+  const handleRemovePhoto = (index: number) => {
+    setDamagePhotos(damagePhotos.filter((_, i) => i !== index));
+  };
+
   const handleCancel = () => {
+    if (!booking) return;
+
     Taro.showModal({
       title: '确认取消',
       content: '确定要取消这个预约吗？',
       success: (res) => {
         if (res.confirm) {
-          Taro.showToast({ title: '已取消预约', icon: 'success' });
-          setTimeout(() => Taro.navigateBack(), 1000);
+          const success = cancelBooking(bookingId);
+          if (success) {
+            Taro.showToast({ title: '已取消预约', icon: 'success' });
+            setTimeout(() => Taro.navigateBack(), 1000);
+          } else {
+            Taro.showToast({ title: '取消失败', icon: 'none' });
+          }
         }
       }
     });
   };
 
-  const handleModify = () => {
-    Taro.showToast({ title: '修改预约功能开发中', icon: 'none' });
+  const openModifyModal = () => {
+    if (!booking) return;
+    setModifyDate(booking.date);
+    setModifyStartTime(booking.startTime);
+    setModifyEndTime(booking.endTime);
+    setModifyPurpose(booking.purpose);
+    setShowModifyModal(true);
+  };
+
+  const handleDateChange = (e: any) => {
+    setModifyDate(e.detail.value);
+    setModifyStartTime('');
+    setModifyEndTime('');
+  };
+
+  const handleTimeSlotSelect = (slot: any) => {
+    if (!slot.available) return;
+    setModifyStartTime(slot.startTime);
+    setModifyEndTime(slot.endTime);
+  };
+
+  const handleModifySubmit = () => {
+    if (!booking) return;
+
+    if (!modifyDate || !modifyStartTime || !modifyEndTime) {
+      Taro.showToast({ title: '请选择日期和时段', icon: 'none' });
+      return;
+    }
+
+    if (!modifyPurpose.trim()) {
+      Taro.showToast({ title: '请填写用途', icon: 'none' });
+      return;
+    }
+
+    if (isDateBlacklisted(modifyDate)) {
+      Taro.showToast({ title: '该日期为黑名单日期，不可预约', icon: 'none' });
+      return;
+    }
+
+    const dateChanged = modifyDate !== booking.date || modifyStartTime !== booking.startTime || modifyEndTime !== booking.endTime;
+    if (dateChanged) {
+      const available = isAssetAvailable(booking.assetId, modifyDate, modifyStartTime, modifyEndTime);
+      if (!available) {
+        Taro.showToast({ title: '该时段资产已被预约', icon: 'none' });
+        return;
+      }
+    }
+
+    const success = updateBooking(bookingId, {
+      date: modifyDate,
+      startTime: modifyStartTime,
+      endTime: modifyEndTime,
+      purpose: modifyPurpose.trim()
+    });
+
+    if (success) {
+      Taro.showToast({ title: '修改成功', icon: 'success' });
+      setShowModifyModal(false);
+    } else {
+      Taro.showToast({ title: '修改失败', icon: 'none' });
+    }
   };
 
   if (!booking) {
     return (
       <View className={styles.page}>
         <View style={{ padding: '200rpx 0', textAlign: 'center', color: '#86909c' }}>
-          加载中...
+          预约不存在
         </View>
       </View>
     );
@@ -111,7 +230,7 @@ const BookingDetailPage: React.FC = () => {
         </Button>
       );
       actions.push(
-        <Button key="modify" className={styles.secondaryBtn} onClick={handleModify}>
+        <Button key="modify" className={styles.secondaryBtn} onClick={openModifyModal}>
           修改预约
         </Button>
       );
@@ -207,7 +326,7 @@ const BookingDetailPage: React.FC = () => {
 
       {booking.damagePhotos && booking.damagePhotos.length > 0 && (
         <View className={styles.section}>
-          <Text className={styles.sectionTitle}>损坏照片</Text>
+          <Text className={styles.sectionTitle}>损坏记录</Text>
           <View className={styles.damagePhotos}>
             {booking.damagePhotos.map((photo, index) => (
               <Image key={index} className={styles.damagePhoto} src={photo} mode="aspectFill" />
@@ -222,6 +341,123 @@ const BookingDetailPage: React.FC = () => {
       )}
 
       {renderActions()}
+
+      {showModifyModal && (
+        <View className={styles.modalOverlay} onClick={() => setShowModifyModal(false)}>
+          <View className={styles.modalContent} onClick={(e) => e.stopPropagation()}>
+            <Text className={styles.modalTitle}>修改预约</Text>
+
+            <View className={styles.formGroup}>
+              <Text className={styles.formLabel}>预约日期</Text>
+              <Picker mode="date" value={modifyDate} onChange={handleDateChange}>
+                <View className={styles.formInput}>
+                  <Text>{modifyDate || '请选择日期'}</Text>
+                </View>
+              </Picker>
+            </View>
+
+            {modifyDate && (
+              <View className={styles.formGroup}>
+                <Text className={styles.formLabel}>选择时段</Text>
+                {isDateBlacklisted(modifyDate) ? (
+                  <View className={styles.disabledHint}>
+                    <Text className={styles.hintText}>该日期为黑名单日期，不可预约</Text>
+                  </View>
+                ) : (
+                  <ScrollView scrollY style={{ maxHeight: '300rpx' }}>
+                    <View className={styles.timeSlotGrid}>
+                      {modifyTimeSlots.map((slot) => (
+                        <View
+                          key={slot.id}
+                          className={classnames(
+                            styles.timeSlotItem,
+                            modifyStartTime === slot.startTime && styles.selected,
+                            !slot.available && styles.disabled
+                          )}
+                          onClick={() => handleTimeSlotSelect(slot)}
+                        >
+                          <Text>{slot.startTime}</Text>
+                          <Text className={styles.slotStatus}>
+                            {slot.available ? '可约' : '已满'}
+                          </Text>
+                        </View>
+                      ))}
+                    </View>
+                  </ScrollView>
+                )}
+              </View>
+            )}
+
+            <View className={styles.formGroup}>
+              <Text className={styles.formLabel}>使用用途</Text>
+              <Textarea
+                className={styles.formTextarea}
+                placeholder="请描述使用用途..."
+                value={modifyPurpose}
+                onInput={(e) => setModifyPurpose(e.detail.value)}
+                maxlength={200}
+              />
+            </View>
+
+            <View className={styles.modalActions}>
+              <Button className={styles.cancelBtn} onClick={() => setShowModifyModal(false)}>
+                取消
+              </Button>
+              <Button className={styles.submitBtn} onClick={handleModifySubmit}>
+                保存修改
+              </Button>
+            </View>
+          </View>
+        </View>
+      )}
+
+      {showDamageModal && (
+        <View className={styles.modalOverlay} onClick={() => setShowDamageModal(false)}>
+          <View className={styles.modalContent} onClick={(e) => e.stopPropagation()}>
+            <Text className={styles.modalTitle}>损坏上报</Text>
+
+            <View className={styles.formGroup}>
+              <Text className={styles.formLabel}>损坏描述</Text>
+              <Textarea
+                className={styles.formTextarea}
+                placeholder="请描述设备损坏情况..."
+                value={damageDesc}
+                onInput={(e) => setDamageDesc(e.detail.value)}
+                maxlength={200}
+              />
+            </View>
+
+            <View className={styles.formGroup}>
+              <Text className={styles.formLabel}>上传照片（最多3张）</Text>
+              <View className={styles.photoUpload}>
+                {damagePhotos.map((photo, index) => (
+                  <View key={index} className={styles.photoItem}>
+                    <Image className={styles.photoPreview} src={photo} mode="aspectFill" />
+                    <View className={styles.photoRemove} onClick={() => handleRemovePhoto(index)}>
+                      <Text className={styles.removeIcon}>×</Text>
+                    </View>
+                  </View>
+                ))}
+                {damagePhotos.length < 3 && (
+                  <View className={styles.photoAdd} onClick={handleUploadPhoto}>
+                    <Text className={styles.addIcon}>+</Text>
+                    <Text className={styles.addText}>上传照片</Text>
+                  </View>
+                )}
+              </View>
+            </View>
+
+            <View className={styles.modalActions}>
+              <Button className={styles.cancelBtn} onClick={() => setShowDamageModal(false)}>
+                取消
+              </Button>
+              <Button className={styles.submitBtn} onClick={handleDamageSubmit}>
+                提交
+              </Button>
+            </View>
+          </View>
+        </View>
+      )}
     </View>
   );
 };

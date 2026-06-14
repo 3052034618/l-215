@@ -1,38 +1,91 @@
 import React, { useState, useMemo } from 'react';
-import { View, Text, Button, ScrollView } from '@tarojs/components';
+import { View, Text, Button, ScrollView, Picker, Input, Textarea, Image } from '@tarojs/components';
 import Taro, { useDidShow } from '@tarojs/taro';
 import classnames from 'classnames';
-import { bookings, blacklistDates, maintenanceRecords, usageStats } from '@/data/bookings';
 import StatusBadge from '@/components/StatusBadge';
 import { getBookingStatusText } from '@/utils/format';
+import { formatDate } from '@/utils/date';
+import { useBookingStore } from '@/store';
+import { assets } from '@/data/assets';
 import styles from './index.module.scss';
 
 const AdminPage: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'overview' | 'approval' | 'blacklist' | 'overdue' | 'maintenance'>('overview');
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  const [showBlacklistModal, setShowBlacklistModal] = useState(false);
+  const [blacklistDate, setBlacklistDate] = useState('');
+  const [blacklistReason, setBlacklistReason] = useState('');
+
+  const [showMaintenanceModal, setShowMaintenanceModal] = useState(false);
+  const [maintenanceAssetId, setMaintenanceAssetId] = useState('');
+  const [maintenanceStartDate, setMaintenanceStartDate] = useState('');
+  const [maintenanceEndDate, setMaintenanceEndDate] = useState('');
+  const [maintenanceReason, setMaintenanceReason] = useState('');
+
+  const [showRejectModal, setShowRejectModal] = useState(false);
+  const [rejectBookingId, setRejectBookingId] = useState('');
+  const [rejectReason, setRejectReason] = useState('');
+
+  const {
+    bookings,
+    blacklistDates,
+    maintenanceRecords,
+    approveBooking,
+    rejectBooking,
+    addBlacklistDate,
+    removeBlacklistDate,
+    addMaintenanceRecord,
+    completeMaintenance,
+    returnBooking,
+    getPendingApprovals,
+    getOverdueBookings
+  } = useBookingStore();
 
   useDidShow(() => {
-    console.log('[Admin] page show');
+    setRefreshKey(prev => prev + 1);
   });
 
   const pendingApprovals = useMemo(() => {
-    return bookings.filter((b) => b.status === 'pending' && b.isHighValue);
-  }, []);
+    return getPendingApprovals();
+  }, [bookings, refreshKey, getPendingApprovals]);
 
   const overdueBookings = useMemo(() => {
-    return bookings.filter((b) => b.status === 'overdue');
-  }, []);
+    return getOverdueBookings();
+  }, [bookings, refreshKey, getOverdueBookings]);
 
-  const topRankings = useMemo(() => {
-    return [...usageStats].sort((a, b) => b.bookingCount - a.bookingCount).slice(0, 5);
-  }, []);
+  const ongoingMaintenance = useMemo(() => {
+    return maintenanceRecords.filter(m => m.status === 'ongoing');
+  }, [maintenanceRecords, refreshKey]);
 
   const totalStats = useMemo(() => {
-    const totalBookings = bookings.length;
-    const totalAssets = 12;
-    const utilizationRate = 58;
+    const totalBookings = bookings.filter(b => b.status !== 'cancelled' && b.status !== 'rejected').length;
+    const totalAssets = assets.length;
+    const utilizationRate = totalBookings > 0 ? Math.round((bookings.filter(b => b.status === 'returned' || b.status === 'picked').length / totalBookings * 100)) : 0;
     const overdueCount = overdueBookings.length;
     return { totalBookings, totalAssets, utilizationRate, overdueCount };
-  }, [overdueBookings]);
+  }, [bookings, overdueBookings]);
+
+  const topRankings = useMemo(() => {
+    const stats = assets.map(asset => {
+      const assetBookings = bookings.filter(b => b.assetId === asset.id && b.status !== 'cancelled' && b.status !== 'rejected');
+      const bookingCount = assetBookings.length;
+      const totalHours = assetBookings.reduce((sum, b) => {
+        const start = parseInt(b.startTime);
+        const end = parseInt(b.endTime);
+        return sum + (end - start);
+      }, 0);
+      const utilizationRate = Math.min(100, Math.round(bookingCount / 10 * 100));
+      return {
+        assetId: asset.id,
+        assetName: asset.name,
+        totalHours,
+        bookingCount,
+        utilizationRate
+      };
+    });
+    return stats.sort((a, b) => b.bookingCount - a.bookingCount).slice(0, 5);
+  }, [bookings]);
 
   const handleApprove = (id: string) => {
     Taro.showModal({
@@ -40,39 +93,180 @@ const AdminPage: React.FC = () => {
       content: '确定通过此预约申请吗？',
       success: (res) => {
         if (res.confirm) {
-          Taro.showToast({ title: '已通过', icon: 'success' });
+          const success = approveBooking(id);
+          if (success) {
+            Taro.showToast({ title: '已通过', icon: 'success' });
+            setRefreshKey(prev => prev + 1);
+          } else {
+            Taro.showToast({ title: '操作失败', icon: 'none' });
+          }
         }
       }
     });
   };
 
-  const handleReject = (id: string) => {
-    Taro.showModal({
-      title: '拒绝申请',
-      content: '确定拒绝此预约申请吗？',
-      success: (res) => {
-        if (res.confirm) {
-          Taro.showToast({ title: '已拒绝', icon: 'none' });
-        }
-      }
-    });
+  const openRejectModal = (id: string) => {
+    setRejectBookingId(id);
+    setRejectReason('');
+    setShowRejectModal(true);
+  };
+
+  const handleRejectSubmit = () => {
+    if (!rejectReason.trim()) {
+      Taro.showToast({ title: '请填写拒绝原因', icon: 'none' });
+      return;
+    }
+    const success = rejectBooking(rejectBookingId, rejectReason.trim());
+    if (success) {
+      Taro.showToast({ title: '已拒绝', icon: 'none' });
+      setShowRejectModal(false);
+      setRefreshKey(prev => prev + 1);
+    } else {
+      Taro.showToast({ title: '操作失败', icon: 'none' });
+    }
   };
 
   const handleOverdueProcess = (id: string) => {
     Taro.showActionSheet({
       itemList: ['联系用户', '标记已归还', '计入黑名单'],
       success: (res) => {
-        Taro.showToast({ title: '操作成功', icon: 'success' });
+        if (res.tapIndex === 0) {
+          Taro.showToast({ title: '联系功能开发中', icon: 'none' });
+        } else if (res.tapIndex === 1) {
+          Taro.showModal({
+            title: '确认归还',
+            content: '确定标记该预约为已归还吗？',
+            success: (modalRes) => {
+              if (modalRes.confirm) {
+                const success = returnBooking(id);
+                if (success) {
+                  Taro.showToast({ title: '已标记归还', icon: 'success' });
+                  setRefreshKey(prev => prev + 1);
+                } else {
+                  Taro.showToast({ title: '操作失败', icon: 'none' });
+                }
+              }
+            }
+          });
+        } else if (res.tapIndex === 2) {
+          Taro.showModal({
+            title: '计入黑名单',
+            content: '确定将该用户加入黑名单吗？',
+            success: (modalRes) => {
+              if (modalRes.confirm) {
+                Taro.showToast({ title: '已计入黑名单', icon: 'success' });
+              }
+            }
+          });
+        }
       }
     });
   };
 
-  const handleAddBlacklist = () => {
-    Taro.showToast({ title: '添加黑名单日期', icon: 'none' });
+  const openBlacklistModal = () => {
+    setBlacklistDate(formatDate(new Date()));
+    setBlacklistReason('');
+    setShowBlacklistModal(true);
   };
 
-  const handleAddMaintenance = () => {
-    Taro.showToast({ title: '登记维修', icon: 'none' });
+  const handleBlacklistSubmit = () => {
+    if (!blacklistDate) {
+      Taro.showToast({ title: '请选择日期', icon: 'none' });
+      return;
+    }
+    if (!blacklistReason.trim()) {
+      Taro.showToast({ title: '请填写原因', icon: 'none' });
+      return;
+    }
+    if (blacklistDates.some(b => b.date === blacklistDate)) {
+      Taro.showToast({ title: '该日期已在黑名单中', icon: 'none' });
+      return;
+    }
+
+    addBlacklistDate(blacklistDate, blacklistReason.trim());
+    Taro.showToast({ title: '添加成功', icon: 'success' });
+    setShowBlacklistModal(false);
+    setRefreshKey(prev => prev + 1);
+  };
+
+  const handleRemoveBlacklist = (id: string) => {
+    Taro.showModal({
+      title: '移除黑名单',
+      content: '确定要移除该黑名单日期吗？',
+      success: (res) => {
+        if (res.confirm) {
+          const success = removeBlacklistDate(id);
+          if (success) {
+            Taro.showToast({ title: '已移除', icon: 'success' });
+            setRefreshKey(prev => prev + 1);
+          } else {
+            Taro.showToast({ title: '操作失败', icon: 'none' });
+          }
+        }
+      }
+    });
+  };
+
+  const openMaintenanceModal = () => {
+    const today = formatDate(new Date());
+    const nextWeek = formatDate(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000));
+    setMaintenanceAssetId(assets[0].id);
+    setMaintenanceStartDate(today);
+    setMaintenanceEndDate(nextWeek);
+    setMaintenanceReason('');
+    setShowMaintenanceModal(true);
+  };
+
+  const handleMaintenanceSubmit = () => {
+    if (!maintenanceAssetId) {
+      Taro.showToast({ title: '请选择资产', icon: 'none' });
+      return;
+    }
+    if (!maintenanceStartDate || !maintenanceEndDate) {
+      Taro.showToast({ title: '请选择日期范围', icon: 'none' });
+      return;
+    }
+    if (maintenanceStartDate > maintenanceEndDate) {
+      Taro.showToast({ title: '结束日期不能早于开始日期', icon: 'none' });
+      return;
+    }
+    if (!maintenanceReason.trim()) {
+      Taro.showToast({ title: '请填写维修原因', icon: 'none' });
+      return;
+    }
+
+    const asset = assets.find(a => a.id === maintenanceAssetId);
+    if (!asset) return;
+
+    addMaintenanceRecord({
+      assetId: maintenanceAssetId,
+      assetName: asset.name,
+      startDate: maintenanceStartDate,
+      endDate: maintenanceEndDate,
+      reason: maintenanceReason.trim()
+    });
+
+    Taro.showToast({ title: '登记成功', icon: 'success' });
+    setShowMaintenanceModal(false);
+    setRefreshKey(prev => prev + 1);
+  };
+
+  const handleCompleteMaintenance = (id: string) => {
+    Taro.showModal({
+      title: '完成维修',
+      content: '确定标记该维修为已完成吗？',
+      success: (res) => {
+        if (res.confirm) {
+          const success = completeMaintenance(id);
+          if (success) {
+            Taro.showToast({ title: '已完成', icon: 'success' });
+            setRefreshKey(prev => prev + 1);
+          } else {
+            Taro.showToast({ title: '操作失败', icon: 'none' });
+          }
+        }
+      }
+    });
   };
 
   const menuItems = [
@@ -107,7 +301,6 @@ const AdminPage: React.FC = () => {
       <View className={styles.statsSection}>
         <View className={styles.statCardHeader}>
           <Text className={styles.sectionTitle}>热门物品排行</Text>
-          <Text className={styles.statCardMore}>查看全部</Text>
         </View>
         <View className={styles.statCard}>
           <View className={styles.rankingList}>
@@ -121,7 +314,7 @@ const AdminPage: React.FC = () => {
                   <View className={styles.rankingBar}>
                     <View
                       className={styles.rankingBarFill}
-                      style={{ width: `${item.utilizationRate}%` }}
+                      style={{ width: `${Math.max(10, item.utilizationRate)}%` }}
                     />
                   </View>
                 </View>
@@ -144,10 +337,13 @@ const AdminPage: React.FC = () => {
               <Text className={styles.listItemDesc}>
                 {booking.userName} · {booking.date} {booking.startTime}-{booking.endTime}
               </Text>
+              <Text className={styles.listItemDesc}>
+                用途：{booking.purpose}
+              </Text>
             </View>
             <Button
               className={classnames(styles.listItemAction, styles.secondary)}
-              onClick={() => handleReject(booking.id)}
+              onClick={() => openRejectModal(booking.id)}
             >
               拒绝
             </Button>
@@ -173,21 +369,33 @@ const AdminPage: React.FC = () => {
         <Button
           className={styles.listItemAction}
           style={{ width: '200rpx', height: '80rpx', float: 'right' }}
-          onClick={handleAddBlacklist}
+          onClick={openBlacklistModal}
         >
           + 添加日期
         </Button>
         <View style={{ clear: 'both' }} />
       </View>
-      {blacklistDates.map((item) => (
-        <View key={item.id} className={styles.listItem}>
-          <View className={styles.listItemInfo}>
-            <Text className={styles.listItemTitle}>{item.date}</Text>
-            <Text className={styles.listItemDesc}>{item.reason}</Text>
+      {blacklistDates.length > 0 ? (
+        blacklistDates.map((item) => (
+          <View key={item.id} className={styles.listItem}>
+            <View className={styles.listItemInfo}>
+              <Text className={styles.listItemTitle}>{item.date}</Text>
+              <Text className={styles.listItemDesc}>{item.reason}</Text>
+            </View>
+            <StatusBadge status="maintenance" text="已禁用" />
+            <Button
+              className={classnames(styles.listItemAction, styles.danger)}
+              onClick={() => handleRemoveBlacklist(item.id)}
+            >
+              移除
+            </Button>
           </View>
-          <StatusBadge status="maintenance" text="已禁用" />
+        ))
+      ) : (
+        <View style={{ textAlign: 'center', padding: '80rpx 0', color: '#86909c' }}>
+          暂无黑名单日期
         </View>
-      ))}
+      )}
     </View>
   );
 
@@ -199,7 +407,10 @@ const AdminPage: React.FC = () => {
             <View className={styles.listItemInfo}>
               <Text className={styles.listItemTitle}>{booking.assetName}</Text>
               <Text className={styles.listItemDesc}>
-                {booking.userName} · 逾期 {(new Date().getDate() - 10)}天
+                {booking.userName} · 预约：{booking.date} {booking.startTime}-{booking.endTime}
+              </Text>
+              <Text className={styles.listItemDesc}>
+                领取时间：{booking.pickedTime}
               </Text>
             </View>
             <Button
@@ -224,26 +435,43 @@ const AdminPage: React.FC = () => {
         <Button
           className={styles.listItemAction}
           style={{ width: '200rpx', height: '80rpx', float: 'right' }}
-          onClick={handleAddMaintenance}
+          onClick={openMaintenanceModal}
         >
           + 登记维修
         </Button>
         <View style={{ clear: 'both' }} />
       </View>
-      {maintenanceRecords.map((item) => (
-        <View key={item.id} className={styles.listItem}>
-          <View className={styles.listItemInfo}>
-            <Text className={styles.listItemTitle}>{item.assetName}</Text>
-            <Text className={styles.listItemDesc}>
-              {item.startDate} ~ {item.endDate} · {item.reason}
-            </Text>
+      {maintenanceRecords.length > 0 ? (
+        maintenanceRecords.map((item) => (
+          <View key={item.id} className={styles.listItem}>
+            <View className={styles.listItemInfo}>
+              <Text className={styles.listItemTitle}>{item.assetName}</Text>
+              <Text className={styles.listItemDesc}>
+                {item.startDate} ~ {item.endDate}
+              </Text>
+              <Text className={styles.listItemDesc}>
+                原因：{item.reason}
+              </Text>
+            </View>
+            <StatusBadge
+              status={item.status === 'ongoing' ? 'maintenance' : 'returned'}
+              text={item.status === 'ongoing' ? '维修中' : '已完成'}
+            />
+            {item.status === 'ongoing' && (
+              <Button
+                className={styles.listItemAction}
+                onClick={() => handleCompleteMaintenance(item.id)}
+              >
+                完成
+              </Button>
+            )}
           </View>
-          <StatusBadge
-            status={item.status === 'ongoing' ? 'maintenance' : 'returned'}
-            text={item.status === 'ongoing' ? '维修中' : '已完成'}
-          />
+        ))
+      ) : (
+        <View style={{ textAlign: 'center', padding: '80rpx 0', color: '#86909c' }}>
+          暂无维修记录
         </View>
-      ))}
+      )}
     </View>
   );
 
@@ -303,6 +531,131 @@ const AdminPage: React.FC = () => {
       {activeTab === 'blacklist' && renderBlacklist()}
       {activeTab === 'overdue' && renderOverdue()}
       {activeTab === 'maintenance' && renderMaintenance()}
+
+      {showBlacklistModal && (
+        <View className={styles.modalOverlay} onClick={() => setShowBlacklistModal(false)}>
+          <View className={styles.modalContent} onClick={(e) => e.stopPropagation()}>
+            <Text className={styles.modalTitle}>添加黑名单日期</Text>
+
+            <View className={styles.formGroup}>
+              <Text className={styles.formLabel}>禁用日期</Text>
+              <Picker mode="date" value={blacklistDate} onChange={(e) => setBlacklistDate(e.detail.value)}>
+                <View className={styles.formInput}>
+                  <Text>{blacklistDate || '请选择日期'}</Text>
+                </View>
+              </Picker>
+            </View>
+
+            <View className={styles.formGroup}>
+              <Text className={styles.formLabel}>禁用原因</Text>
+              <Textarea
+                className={styles.formTextarea}
+                placeholder="请输入禁用原因..."
+                value={blacklistReason}
+                onInput={(e) => setBlacklistReason(e.detail.value)}
+                maxlength={100}
+              />
+            </View>
+
+            <View className={styles.modalActions}>
+              <Button className={styles.cancelBtn} onClick={() => setShowBlacklistModal(false)}>
+                取消
+              </Button>
+              <Button className={styles.submitBtn} onClick={handleBlacklistSubmit}>
+                添加
+              </Button>
+            </View>
+          </View>
+        </View>
+      )}
+
+      {showMaintenanceModal && (
+        <View className={styles.modalOverlay} onClick={() => setShowMaintenanceModal(false)}>
+          <View className={styles.modalContent} onClick={(e) => e.stopPropagation()}>
+            <Text className={styles.modalTitle}>登记维修</Text>
+
+            <View className={styles.formGroup}>
+              <Text className={styles.formLabel}>选择资产</Text>
+              <Picker
+                mode="selector"
+                range={assets.map(a => a.name)}
+                value={assets.findIndex(a => a.id === maintenanceAssetId)}
+                onChange={(e) => setMaintenanceAssetId(assets[e.detail.value].id)}
+              >
+                <View className={styles.formInput}>
+                  <Text>{assets.find(a => a.id === maintenanceAssetId)?.name || '请选择资产'}</Text>
+                </View>
+              </Picker>
+            </View>
+
+            <View className={styles.formGroup}>
+              <Text className={styles.formLabel}>开始日期</Text>
+              <Picker mode="date" value={maintenanceStartDate} onChange={(e) => setMaintenanceStartDate(e.detail.value)}>
+                <View className={styles.formInput}>
+                  <Text>{maintenanceStartDate || '请选择日期'}</Text>
+                </View>
+              </Picker>
+            </View>
+
+            <View className={styles.formGroup}>
+              <Text className={styles.formLabel}>结束日期</Text>
+              <Picker mode="date" value={maintenanceEndDate} onChange={(e) => setMaintenanceEndDate(e.detail.value)}>
+                <View className={styles.formInput}>
+                  <Text>{maintenanceEndDate || '请选择日期'}</Text>
+                </View>
+              </Picker>
+            </View>
+
+            <View className={styles.formGroup}>
+              <Text className={styles.formLabel}>维修原因</Text>
+              <Textarea
+                className={styles.formTextarea}
+                placeholder="请输入维修原因..."
+                value={maintenanceReason}
+                onInput={(e) => setMaintenanceReason(e.detail.value)}
+                maxlength={100}
+              />
+            </View>
+
+            <View className={styles.modalActions}>
+              <Button className={styles.cancelBtn} onClick={() => setShowMaintenanceModal(false)}>
+                取消
+              </Button>
+              <Button className={styles.submitBtn} onClick={handleMaintenanceSubmit}>
+                登记
+              </Button>
+            </View>
+          </View>
+        </View>
+      )}
+
+      {showRejectModal && (
+        <View className={styles.modalOverlay} onClick={() => setShowRejectModal(false)}>
+          <View className={styles.modalContent} onClick={(e) => e.stopPropagation()}>
+            <Text className={styles.modalTitle}>拒绝申请</Text>
+
+            <View className={styles.formGroup}>
+              <Text className={styles.formLabel}>拒绝原因</Text>
+              <Textarea
+                className={styles.formTextarea}
+                placeholder="请输入拒绝原因..."
+                value={rejectReason}
+                onInput={(e) => setRejectReason(e.detail.value)}
+                maxlength={100}
+              />
+            </View>
+
+            <View className={styles.modalActions}>
+              <Button className={styles.cancelBtn} onClick={() => setShowRejectModal(false)}>
+                取消
+              </Button>
+              <Button className={classnames(styles.submitBtn, styles.danger)} onClick={handleRejectSubmit}>
+                确认拒绝
+              </Button>
+            </View>
+          </View>
+        </View>
+      )}
     </View>
   );
 };

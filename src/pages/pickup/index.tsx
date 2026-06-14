@@ -2,9 +2,9 @@ import React, { useState, useMemo } from 'react';
 import { View, Text, Image, Button, Textarea } from '@tarojs/components';
 import Taro, { useDidShow } from '@tarojs/taro';
 import classnames from 'classnames';
-import { bookings } from '@/data/bookings';
 import StatusBadge from '@/components/StatusBadge';
 import { getBookingStatusText } from '@/utils/format';
+import { useBookingStore } from '@/store';
 import styles from './index.module.scss';
 
 type TabType = 'pickup' | 'return';
@@ -14,44 +14,90 @@ const PickupPage: React.FC = () => {
   const [showDamageModal, setShowDamageModal] = useState(false);
   const [damageDesc, setDamageDesc] = useState('');
   const [damagePhotos, setDamagePhotos] = useState<string[]>([]);
+  const [currentBookingId, setCurrentBookingId] = useState<string>('');
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  const { bookings, pickupBooking, returnBooking, currentUserId } = useBookingStore();
 
   useDidShow(() => {
-    console.log('[Pickup] page show');
+    setRefreshKey(prev => prev + 1);
   });
 
   const toPickupList = useMemo(() => {
-    return bookings.filter((b) => b.status === 'approved');
-  }, []);
+    return bookings.filter((b) => b.userId === currentUserId && b.status === 'approved');
+  }, [bookings, currentUserId, refreshKey]);
 
   const toReturnList = useMemo(() => {
-    return bookings.filter((b) => b.status === 'picked' || b.status === 'overdue');
-  }, []);
+    return bookings.filter((b) => b.userId === currentUserId && (b.status === 'picked' || b.status === 'overdue'));
+  }, [bookings, currentUserId, refreshKey]);
 
   const displayList = activeTab === 'pickup' ? toPickupList : toReturnList;
 
-  const handleScan = () => {
+  const handlePickup = (bookingId?: string) => {
     Taro.scanCode({
-      success: (res) => {
-        console.log('[Pickup] scan result:', res.result);
-        if (activeTab === 'pickup') {
+      success: () => {
+        const id = bookingId || currentBookingId;
+        if (!id) {
+          Taro.showToast({ title: '请选择要领取的预约', icon: 'none' });
+          return;
+        }
+        const success = pickupBooking(id);
+        if (success) {
           Taro.showToast({ title: '领取成功', icon: 'success' });
+          setRefreshKey(prev => prev + 1);
         } else {
-          setShowDamageModal(true);
+          Taro.showToast({ title: '领取失败', icon: 'none' });
         }
       },
-      fail: (err) => {
-        console.error('[Pickup] scan failed:', err);
+      fail: () => {
         Taro.showToast({ title: '扫码取消', icon: 'none' });
       }
     });
   };
 
-  const handlePickup = () => {
-    handleScan();
+  const handleReturn = (bookingId?: string) => {
+    const id = bookingId || currentBookingId;
+    if (!id) {
+      Taro.showToast({ title: '请选择要归还的预约', icon: 'none' });
+      return;
+    }
+
+    Taro.scanCode({
+      success: () => {
+        setCurrentBookingId(id);
+        Taro.showModal({
+          title: '设备状态',
+          content: '设备是否完好？',
+          confirmText: '完好',
+          cancelText: '有损坏',
+          success: (res) => {
+            if (res.confirm) {
+              const success = returnBooking(id);
+              if (success) {
+                Taro.showToast({ title: '归还成功', icon: 'success' });
+                setRefreshKey(prev => prev + 1);
+              } else {
+                Taro.showToast({ title: '归还失败', icon: 'none' });
+              }
+            } else {
+              setCurrentBookingId(id);
+              setShowDamageModal(true);
+            }
+          }
+        });
+      },
+      fail: () => {
+        Taro.showToast({ title: '扫码取消', icon: 'none' });
+      }
+    });
   };
 
-  const handleReturn = () => {
-    handleScan();
+  const handleScan = () => {
+    if (activeTab === 'pickup') {
+      handlePickup();
+    } else {
+      handleReturn();
+    }
   };
 
   const handleAddPhoto = () => {
@@ -63,16 +109,33 @@ const PickupPage: React.FC = () => {
     });
   };
 
+  const handleRemovePhoto = (index: number) => {
+    setDamagePhotos(damagePhotos.filter((_, i) => i !== index));
+  };
+
   const handleSubmitDamage = () => {
     if (!damageDesc.trim()) {
       Taro.showToast({ title: '请填写损坏描述', icon: 'none' });
       return;
     }
 
-    Taro.showToast({ title: '归还成功，损坏已记录', icon: 'success' });
-    setShowDamageModal(false);
-    setDamageDesc('');
-    setDamagePhotos([]);
+    const success = returnBooking(currentBookingId, damageDesc.trim(), damagePhotos);
+    if (success) {
+      Taro.showToast({ title: '归还成功，损坏已记录', icon: 'success' });
+      setShowDamageModal(false);
+      setDamageDesc('');
+      setDamagePhotos([]);
+      setCurrentBookingId('');
+      setRefreshKey(prev => prev + 1);
+    } else {
+      Taro.showToast({ title: '归还失败', icon: 'none' });
+    }
+  };
+
+  const handleItemClick = (bookingId: string) => {
+    Taro.navigateTo({
+      url: `/pages/booking-detail/index?id=${bookingId}`
+    });
   };
 
   return (
@@ -121,18 +184,27 @@ const PickupPage: React.FC = () => {
 
         {displayList.length > 0 ? (
           displayList.map((booking) => (
-            <View key={booking.id} className={styles.todoItem}>
+            <View key={booking.id} className={styles.todoItem} onClick={() => handleItemClick(booking.id)}>
               <Image className={styles.todoImage} src={booking.assetImage} mode="aspectFill" />
               <View className={styles.todoInfo}>
                 <Text className={styles.todoName}>{booking.assetName}</Text>
                 <Text className={styles.todoTime}>
                   {booking.date} {booking.startTime} - {booking.endTime}
                 </Text>
-                <StatusBadge status={booking.status} text={getBookingStatusText(booking.status)} />
+                <View style={{ marginTop: '8rpx' }}>
+                  <StatusBadge status={booking.status} text={getBookingStatusText(booking.status)} />
+                </View>
               </View>
               <Button
                 className={styles.todoAction}
-                onClick={() => activeTab === 'pickup' ? handlePickup() : handleReturn()}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (activeTab === 'pickup') {
+                    handlePickup(booking.id);
+                  } else {
+                    handleReturn(booking.id);
+                  }
+                }}
               >
                 {activeTab === 'pickup' ? '领取' : '归还'}
               </Button>
@@ -170,6 +242,9 @@ const PickupPage: React.FC = () => {
                 {damagePhotos.map((photo, index) => (
                   <View key={index} className={styles.photoItem}>
                     <Image className={styles.photoImage} src={photo} mode="aspectFill" />
+                    <View className={styles.photoRemove} onClick={() => handleRemovePhoto(index)}>
+                      <Text className={styles.removeIcon}>×</Text>
+                    </View>
                   </View>
                 ))}
                 {damagePhotos.length < 3 && (
@@ -177,7 +252,7 @@ const PickupPage: React.FC = () => {
                     className={classnames(styles.photoItem, styles.photoAdd)}
                     onClick={handleAddPhoto}
                   >
-                    <Text>+</Text>
+                    <Text className={styles.addIcon}>+</Text>
                   </View>
                 )}
               </View>

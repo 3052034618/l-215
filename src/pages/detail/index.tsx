@@ -1,15 +1,24 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { View, Text, Image, Button } from '@tarojs/components';
 import Taro, { useRouter, useDidShow } from '@tarojs/taro';
 import { assets } from '@/data/assets';
 import { getStatusText, getLocationName, getCategoryName } from '@/utils/format';
+import { formatDate } from '@/utils/date';
 import StatusBadge from '@/components/StatusBadge';
 import { Asset } from '@/types/asset';
+import { useBookingStore } from '@/store';
 import styles from './index.module.scss';
 
 const DetailPage: React.FC = () => {
   const router = useRouter();
   const [asset, setAsset] = useState<Asset | null>(null);
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  const date = router.params.date || formatDate(new Date());
+  const startTime = router.params.startTime || '08:00';
+  const endTime = router.params.endTime || '20:00';
+
+  const { isAssetAvailable, getAvailableStock, isDateBlacklisted, isAssetUnderMaintenance } = useBookingStore();
 
   useEffect(() => {
     const id = router.params.id;
@@ -21,8 +30,55 @@ const DetailPage: React.FC = () => {
   }, [router.params.id]);
 
   useDidShow(() => {
-    console.log('[Detail] page show, assetId:', router.params.id);
+    setRefreshKey(prev => prev + 1);
   });
+
+  const { availableNow, availableStock, statusText, statusType, isBlacklisted, isMaintenance } = useMemo(() => {
+    if (!asset) {
+      return {
+        availableNow: false,
+        availableStock: 0,
+        statusText: '加载中',
+        statusType: 'maintenance' as const,
+        isBlacklisted: false,
+        isMaintenance: false
+      };
+    }
+
+    const blacklisted = isDateBlacklisted(date);
+    const maintenance = isAssetUnderMaintenance(asset.id, date);
+    const available = isAssetAvailable(asset.id, date, startTime, endTime);
+    const stock = getAvailableStock(asset.id, date, startTime, endTime);
+
+    let status: 'available' | 'maintenance' | 'unavailable' | 'pending' = 'available';
+    let text = '可预约';
+
+    if (blacklisted) {
+      status = 'unavailable';
+      text = '黑名单日期';
+    } else if (maintenance) {
+      status = 'maintenance';
+      text = '维修中';
+    } else if (stock > 0 && available) {
+      status = 'available';
+      text = '可预约';
+    } else if (stock === 0) {
+      status = 'unavailable';
+      text = '已约满';
+    } else {
+      status = 'unavailable';
+      text = '不可预约';
+    }
+
+    return {
+      availableNow: available && stock > 0,
+      availableStock: stock,
+      statusText: text,
+      statusType: status,
+      isBlacklisted: blacklisted,
+      isMaintenance: maintenance
+    };
+  }, [asset, date, startTime, endTime, refreshKey, isAssetAvailable, getAvailableStock, isDateBlacklisted, isAssetUnderMaintenance]);
 
   const handleBook = () => {
     Taro.switchTab({ url: '/pages/calendar/index' });
@@ -42,8 +98,6 @@ const DetailPage: React.FC = () => {
     );
   }
 
-  const canBook = asset.status === 'available' && asset.availableStock > 0;
-
   return (
     <View className={styles.page}>
       <Image className={styles.headerImage} src={asset.image} mode="aspectFill" />
@@ -60,7 +114,7 @@ const DetailPage: React.FC = () => {
               <Text className={styles.metaIcon}>📦</Text>
               <Text>{getCategoryName(asset.category)}</Text>
             </View>
-            <StatusBadge status={asset.status} text={getStatusText(asset.status)} />
+            <StatusBadge status={statusType} text={statusText} />
           </View>
           <View className={styles.tags}>
             {asset.tags.map((tag, index) => (
@@ -68,6 +122,23 @@ const DetailPage: React.FC = () => {
             ))}
             {asset.isHighValue && <Text className={styles.highValueTag}>高价值资产</Text>}
           </View>
+
+          {(isBlacklisted || isMaintenance) && (
+            <View className={styles.warningBanner}>
+              <Text className={styles.warningIcon}>⚠️</Text>
+              <Text className={styles.warningText}>
+                {isBlacklisted ? `${date} 为黑名单日期，暂不可预约` : `${date} 该设备正在维修中`}
+              </Text>
+            </View>
+          )}
+
+          {!isBlacklisted && !isMaintenance && (
+            <View className={styles.dateInfo}>
+              <Text className={styles.dateText}>
+                查询时段：{date} {startTime}-{endTime}
+              </Text>
+            </View>
+          )}
         </View>
 
         <View className={styles.section}>
@@ -111,12 +182,12 @@ const DetailPage: React.FC = () => {
               <Text className={styles.stockLabel}>总库存</Text>
             </View>
             <View className={styles.stockItem}>
-              <Text className={styles.stockNum}>{asset.availableStock}</Text>
+              <Text className={styles.stockNum}>{availableStock}</Text>
               <Text className={styles.stockLabel}>可预约</Text>
             </View>
             <View className={styles.stockItem}>
-              <Text className={styles.stockNum}>{asset.totalStock - asset.availableStock}</Text>
-              <Text className={styles.stockLabel}>已借出</Text>
+              <Text className={styles.stockNum}>{asset.totalStock - availableStock}</Text>
+              <Text className={styles.stockLabel}>已占用</Text>
             </View>
           </View>
         </View>
@@ -128,10 +199,10 @@ const DetailPage: React.FC = () => {
         </Button>
         <Button
           className={styles.bookBtn}
-          disabled={!canBook}
+          disabled={!availableNow}
           onClick={handleBook}
         >
-          {canBook ? '立即预约' : '暂不可预约'}
+          {availableNow ? '立即预约' : isBlacklisted ? '黑名单日期' : isMaintenance ? '维修中' : '暂不可预约'}
         </Button>
       </View>
     </View>

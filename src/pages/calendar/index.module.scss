@@ -281,3 +281,56 @@
   color: $color-text-tertiary;
   font-size: $font-size-sm;
 }
+
+.blacklistBanner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: $spacing-md $page-padding;
+  background: rgba(255, 93, 93, 0.1);
+  margin: 0 $page-padding $spacing-md;
+  border-radius: $radius-md;
+}
+
+.bannerIcon {
+  font-size: 28rpx;
+  margin-right: $spacing-sm;
+}
+
+.bannerText {
+  font-size: $font-size-sm;
+  color: $color-status-danger;
+}
+
+.disabledHint {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60rpx 0;
+  background: $color-bg-card;
+  border-radius: $radius-md;
+  margin-bottom: $spacing-lg;
+}
+
+.hintIcon {
+  font-size: 64rpx;
+  margin-bottom: $spacing-md;
+  opacity: 0.5;
+}
+
+.hintText {
+  font-size: $font-size-md;
+  color: $color-text-secondary;
+}
+
+.assetSelectDisabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.assetSelectMeta {
+  font-size: $font-size-xs;
+  color: $color-text-tertiary;
+  margin-top: 4rpx;
+}

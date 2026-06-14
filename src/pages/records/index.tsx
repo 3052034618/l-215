@@ -2,9 +2,9 @@ import React, { useState, useMemo } from 'react';
 import { View, Text, ScrollView } from '@tarojs/components';
 import Taro, { useDidShow } from '@tarojs/taro';
 import classnames from 'classnames';
-import { bookings } from '@/data/bookings';
 import BookingCard from '@/components/BookingCard';
 import { BookingStatus } from '@/types/booking';
+import { useBookingStore } from '@/store';
 import styles from './index.module.scss';
 
 type TabType = 'all' | BookingStatus;
@@ -20,14 +20,17 @@ const tabList: { key: TabType; label: string }[] = [
 
 const RecordsPage: React.FC = () => {
   const [activeTab, setActiveTab] = useState<TabType>('all');
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  const { bookings, currentUserId, currentUserName, currentUserDept, cancelBooking } = useBookingStore();
 
   useDidShow(() => {
-    console.log('[Records] page show');
+    setRefreshKey(prev => prev + 1);
   });
 
   const myBookings = useMemo(() => {
-    return bookings.filter((b) => b.userId === 'u001');
-  }, []);
+    return bookings.filter((b) => b.userId === currentUserId);
+  }, [bookings, currentUserId, refreshKey]);
 
   const filteredBookings = useMemo(() => {
     if (activeTab === 'all') return myBookings;
@@ -42,8 +45,8 @@ const RecordsPage: React.FC = () => {
     return { pending, approved, picked, returned };
   }, [myBookings]);
 
-  const hasOverdue = useMemo(() => {
-    return myBookings.some((b) => b.status === 'overdue');
+  const overdueBookings = useMemo(() => {
+    return myBookings.filter((b) => b.status === 'overdue');
   }, [myBookings]);
 
   const handleCancel = (bookingId: string) => {
@@ -52,7 +55,13 @@ const RecordsPage: React.FC = () => {
       content: '确定要取消这个预约吗？',
       success: (res) => {
         if (res.confirm) {
-          Taro.showToast({ title: '已取消预约', icon: 'success' });
+          const success = cancelBooking(bookingId);
+          if (success) {
+            Taro.showToast({ title: '已取消预约', icon: 'success' });
+            setRefreshKey(prev => prev + 1);
+          } else {
+            Taro.showToast({ title: '取消失败', icon: 'none' });
+          }
         }
       }
     });
@@ -66,13 +75,19 @@ const RecordsPage: React.FC = () => {
     Taro.switchTab({ url: '/pages/pickup/index' });
   };
 
+  const handleBookingClick = (bookingId: string) => {
+    Taro.navigateTo({
+      url: `/pages/booking-detail/index?id=${bookingId}`
+    });
+  };
+
   return (
     <View className={styles.page}>
       <View className={styles.profileCard}>
         <View className={styles.avatar}>👤</View>
         <View className={styles.userInfo}>
-          <Text className={styles.userName}>张三</Text>
-          <Text className={styles.userDept}>市场部 · 高级专员</Text>
+          <Text className={styles.userName}>{currentUserName}</Text>
+          <Text className={styles.userDept}>{currentUserDept}</Text>
         </View>
       </View>
 
@@ -91,10 +106,12 @@ const RecordsPage: React.FC = () => {
         </View>
       </View>
 
-      {hasOverdue && (
+      {overdueBookings.length > 0 && (
         <View className={styles.reminderCard}>
           <Text className={styles.reminderIcon}>⚠️</Text>
-          <Text className={styles.reminderText}>您有1个预约已逾期，请尽快归还</Text>
+          <Text className={styles.reminderText}>
+            您有{overdueBookings.length}个预约已逾期，请尽快归还
+          </Text>
         </View>
       )}
 
@@ -113,13 +130,14 @@ const RecordsPage: React.FC = () => {
       <View className={styles.bookingList}>
         {filteredBookings.length > 0 ? (
           filteredBookings.map((booking) => (
-            <BookingCard
-              key={booking.id}
-              booking={booking}
-              onPickup={handlePickup}
-              onReturn={handleReturn}
-              onCancel={() => handleCancel(booking.id)}
-            />
+            <View key={booking.id} onClick={() => handleBookingClick(booking.id)}>
+              <BookingCard
+                booking={booking}
+                onPickup={handlePickup}
+                onReturn={handleReturn}
+                onCancel={() => handleCancel(booking.id)}
+              />
+            </View>
           ))
         ) : (
           <View className={styles.emptyState}>

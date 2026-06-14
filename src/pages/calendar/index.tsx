@@ -4,11 +4,9 @@ import Taro, { useDidShow } from '@tarojs/taro';
 import classnames from 'classnames';
 import Calendar from '@/components/Calendar';
 import StatusBadge from '@/components/StatusBadge';
-import { assets } from '@/data/assets';
-import { bookings } from '@/data/bookings';
-import { generateTimeSlots } from '@/data/assets';
 import { formatDate, isSameDay } from '@/utils/date';
-import { getBookingStatusText } from '@/utils/format';
+import { getBookingStatusText, getLocationName } from '@/utils/format';
+import { useBookingStore } from '@/store';
 import styles from './index.module.scss';
 
 const CalendarPage: React.FC = () => {
@@ -17,35 +15,87 @@ const CalendarPage: React.FC = () => {
   const [showModal, setShowModal] = useState(false);
   const [selectedAssetId, setSelectedAssetId] = useState<string>('');
   const [purpose, setPurpose] = useState('');
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  const {
+    assets,
+    generateTimeSlots,
+    getBookingsByDate,
+    addBooking,
+    isDateBlacklisted,
+    blacklistDates,
+    maintenanceRecords
+  } = useBookingStore();
 
   const dateStr = formatDate(selectedDate);
-
-  const timeSlots = useMemo(() => {
-    return generateTimeSlots(dateStr);
-  }, [dateStr]);
-
-  const dayBookings = useMemo(() => {
-    return bookings.filter((b) => isSameDay(b.date, selectedDate));
-  }, [selectedDate]);
-
-  const bookingDates = useMemo(() => {
-    return bookings.map((b) => b.date);
-  }, []);
-
-  const availableAssets = useMemo(() => {
-    return assets.filter((a) => a.status === 'available' && a.availableStock > 0);
-  }, []);
+  const dateIsBlacklisted = useMemo(() => isDateBlacklisted(dateStr), [dateStr, isDateBlacklisted]);
 
   useDidShow(() => {
-    console.log('[Calendar] page show');
+    setRefreshKey(prev => prev + 1);
   });
+
+  const timeSlots = useMemo(() => {
+    if (dateIsBlacklisted) {
+      return generateTimeSlots(dateStr);
+    }
+    if (selectedAssetId) {
+      return generateTimeSlots(dateStr, selectedAssetId);
+    }
+    return generateTimeSlots(dateStr);
+  }, [dateStr, selectedAssetId, dateIsBlacklisted, generateTimeSlots, refreshKey]);
+
+  const dayBookings = useMemo(() => {
+    return getBookingsByDate(dateStr);
+  }, [dateStr, getBookingsByDate, refreshKey]);
+
+  const bookingDates = useMemo(() => {
+    const bookingDatesSet = new Set(dayBookings.map(b => b.date));
+    return Array.from(bookingDatesSet);
+  }, [dayBookings]);
+
+  const disabledDates = useMemo(() => {
+    const dates: string[] = [];
+    blacklistDates.forEach(bl => dates.push(bl.date));
+    maintenanceRecords
+      .filter(m => m.status === 'ongoing')
+      .forEach(m => {
+        const start = new Date(m.startDate);
+        const end = new Date(m.endDate);
+        for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+          dates.push(formatDate(d));
+        }
+      });
+    return dates;
+  }, [blacklistDates, maintenanceRecords]);
+
+  const availableAssets = useMemo(() => {
+    const slot = timeSlots.find(s => s.id === selectedSlot);
+    if (!slot && selectedSlot) {
+      return assets.filter(a => a.status !== 'maintenance');
+    }
+    return assets.filter(a => a.status !== 'maintenance');
+  }, [assets, selectedSlot, timeSlots]);
+
+  const isAssetAvailableForSlot = (assetId: string) => {
+    if (!selectedSlot) return true;
+    const slot = timeSlots.find(s => s.id === selectedSlot);
+    if (!slot) return false;
+    if (dateIsBlacklisted) return false;
+    const { isAssetAvailable } = useBookingStore.getState();
+    return isAssetAvailable(assetId, dateStr, slot.startTime, slot.endTime);
+  };
 
   const handleSlotClick = (slotId: string, available: boolean) => {
     if (!available) return;
     setSelectedSlot(slotId === selectedSlot ? null : slotId);
+    setSelectedAssetId('');
   };
 
   const handleBook = () => {
+    if (dateIsBlacklisted) {
+      Taro.showToast({ title: '该日期不可预约', icon: 'none' });
+      return;
+    }
     if (!selectedSlot) {
       Taro.showToast({ title: '请选择时段', icon: 'none' });
       return;
@@ -63,59 +113,101 @@ const CalendarPage: React.FC = () => {
       return;
     }
 
-    const selectedAsset = assets.find((a) => a.id === selectedAssetId);
-    if (selectedAsset?.isHighValue) {
-      Taro.showToast({ title: '高价值设备需管理员审批', icon: 'none' });
-    } else {
-      Taro.showToast({ title: '预约提交成功', icon: 'success' });
+    const slot = timeSlots.find(s => s.id === selectedSlot);
+    if (!slot) return;
+
+    const asset = assets.find(a => a.id === selectedAssetId);
+    if (!asset) return;
+
+    if (!isAssetAvailableForSlot(selectedAssetId)) {
+      Taro.showToast({ title: '该时段资产已被预约', icon: 'none' });
+      return;
     }
 
-    setShowModal(false);
-    setSelectedSlot(null);
-    setSelectedAssetId('');
-    setPurpose('');
+    try {
+      const newBooking = addBooking({
+        assetId: selectedAssetId,
+        date: dateStr,
+        startTime: slot.startTime,
+        endTime: slot.endTime,
+        purpose: purpose.trim()
+      });
+
+      if (asset.isHighValue) {
+        Taro.showToast({ title: '已提交，等待管理员审批', icon: 'none' });
+      } else {
+        Taro.showToast({ title: '预约提交成功', icon: 'success' });
+      }
+
+      setShowModal(false);
+      setSelectedSlot(null);
+      setSelectedAssetId('');
+      setPurpose('');
+      setRefreshKey(prev => prev + 1);
+    } catch (e: any) {
+      Taro.showToast({ title: e.message || '预约失败', icon: 'none' });
+    }
   };
 
   const slot = timeSlots.find((s) => s.id === selectedSlot);
 
   return (
     <View className={styles.page}>
+      {dateIsBlacklisted && (
+        <View className={styles.blacklistBanner}>
+          <Text className={styles.bannerIcon}>⚠️</Text>
+          <Text className={styles.bannerText}>该日期为黑名单日期，不可预约</Text>
+        </View>
+      )}
+
       <View className={styles.section}>
         <Text className={styles.sectionTitle}>选择日期</Text>
         <Calendar
           value={selectedDate}
           onChange={setSelectedDate}
           bookingDates={bookingDates}
+          disabledDates={disabledDates}
         />
       </View>
 
       <View className={styles.section}>
         <Text className={styles.sectionTitle}>选择时段</Text>
-        <View className={styles.timeSlots}>
-          {timeSlots.map((slot) => (
-            <View
-              key={slot.id}
-              className={classnames(
-                styles.timeSlot,
-                selectedSlot === slot.id && styles.selected,
-                !slot.available && styles.disabled
-              )}
-              onClick={() => handleSlotClick(slot.id, slot.available)}
-            >
-              <Text className={styles.timeText}>{slot.startTime}</Text>
-              <Text className={classnames(styles.timeStatus, slot.available ? styles.available : styles.unavailable)}>
-                {slot.available ? '可预约' : '已满'}
-              </Text>
-            </View>
-          ))}
-        </View>
+        {dateIsBlacklisted ? (
+          <View className={styles.disabledHint}>
+            <Text className={styles.hintIcon}>🚫</Text>
+            <Text className={styles.hintText}>该日期不可预约，请选择其他日期</Text>
+          </View>
+        ) : (
+          <View className={styles.timeSlots}>
+            {timeSlots.map((slot) => (
+              <View
+                key={slot.id}
+                className={classnames(
+                  styles.timeSlot,
+                  selectedSlot === slot.id && styles.selected,
+                  !slot.available && styles.disabled
+                )}
+                onClick={() => handleSlotClick(slot.id, slot.available)}
+              >
+                <Text className={styles.timeText}>{slot.startTime}</Text>
+                <Text className={classnames(styles.timeStatus, slot.available ? styles.available : styles.unavailable)}>
+                  {slot.available ? '可预约' : '已满'}
+                </Text>
+              </View>
+            ))}
+          </View>
+        )}
       </View>
 
       <View className={styles.bookingList}>
         <Text className={styles.listTitle}>当日预约 ({dayBookings.length})</Text>
         {dayBookings.length > 0 ? (
           dayBookings.map((booking) => (
-            <View key={booking.id} className={styles.bookingItem}>
+            <View
+              key={booking.id}
+              className={styles.bookingItem}
+              onClick={() => Taro.navigateTo({ url: `/pages/booking-detail/index?id=${booking.id}` })}
+            >
               <Image className={styles.bookingImage} src={booking.assetImage} mode="aspectFill" />
               <View className={styles.bookingInfo}>
                 <Text className={styles.bookingName}>{booking.assetName}</Text>
@@ -131,7 +223,7 @@ const CalendarPage: React.FC = () => {
         )}
       </View>
 
-      {selectedSlot && (
+      {selectedSlot && !dateIsBlacklisted && (
         <View className={styles.fab} onClick={handleBook}>
           <Text className={styles.fabIcon}>+</Text>
         </View>
@@ -152,22 +244,32 @@ const CalendarPage: React.FC = () => {
             <View className={styles.formGroup}>
               <Text className={styles.formLabel}>选择资产</Text>
               <ScrollView scrollY style={{ maxHeight: '400rpx' }}>
-                {availableAssets.map((asset) => (
-                  <View
-                    key={asset.id}
-                    className={classnames(styles.assetSelect, selectedAssetId === asset.id && styles.selected)}
-                    onClick={() => setSelectedAssetId(asset.id)}
-                  >
-                    <Image className={styles.assetSelectImg} src={asset.image} mode="aspectFill" />
-                    <View className={styles.assetSelectInfo}>
-                      <Text className={styles.assetSelectName}>{asset.name}</Text>
-                      <Text className={styles.assetSelectStock}>
-                        可用 {asset.availableStock}/{asset.totalStock}
-                        {asset.isHighValue && ' · 高价值需审批'}
-                      </Text>
+                {availableAssets.map((asset) => {
+                  const available = isAssetAvailableForSlot(asset.id);
+                  return (
+                    <View
+                      key={asset.id}
+                      className={classnames(
+                        styles.assetSelect,
+                        selectedAssetId === asset.id && styles.selected,
+                        !available && styles.assetSelectDisabled
+                      )}
+                      onClick={() => available && setSelectedAssetId(asset.id)}
+                    >
+                      <Image className={styles.assetSelectImg} src={asset.image} mode="aspectFill" />
+                      <View className={styles.assetSelectInfo}>
+                        <Text className={styles.assetSelectName}>{asset.name}</Text>
+                        <Text className={styles.assetSelectMeta}>
+                          📍 {getLocationName(asset.location)}
+                        </Text>
+                        <Text className={styles.assetSelectStock}>
+                          {available ? '可预约' : '该时段已约满'}
+                          {asset.isHighValue && ' · 高价值需审批'}
+                        </Text>
+                      </View>
                     </View>
-                  </View>
-                ))}
+                  );
+                })}
               </ScrollView>
             </View>
 

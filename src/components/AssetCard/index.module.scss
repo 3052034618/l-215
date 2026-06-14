@@ -54,6 +54,12 @@
   @include text-ellipsis-multi(2);
 }
 
+.location {
+  font-size: $font-size-xs;
+  color: $color-text-tertiary;
+  margin-top: $spacing-xs;
+}
+
 .footer {
   display: flex;
   justify-content: space-between;

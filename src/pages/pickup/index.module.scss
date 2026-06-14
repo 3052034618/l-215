@@ -259,6 +259,34 @@
   color: $color-text-tertiary;
 }
 
+.photoItem {
+  position: relative;
+}
+
+.photoRemove {
+  position: absolute;
+  top: -12rpx;
+  right: -12rpx;
+  width: 40rpx;
+  height: 40rpx;
+  background: $color-error;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.removeIcon {
+  font-size: 24rpx;
+  color: $color-text-white;
+  line-height: 1;
+}
+
+.addIcon {
+  font-size: 48rpx;
+  color: $color-text-tertiary;
+}
+
 .modalActions {
   display: flex;
   gap: $spacing-md;

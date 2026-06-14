@@ -191,3 +191,65 @@
   font-size: $font-size-md;
   color: $color-text-tertiary;
 }
+
+.disabledText {
+  color: $color-text-placeholder !important;
+}
+
+.blacklistWarning {
+  display: flex;
+  align-items: center;
+  padding: $spacing-md $spacing-lg;
+  background: rgba(255, 93, 93, 0.1);
+  border-radius: $radius-md;
+  margin-bottom: $spacing-lg;
+}
+
+.warningIcon {
+  font-size: 28rpx;
+  margin-right: $spacing-sm;
+}
+
+.warningText {
+  font-size: $font-size-sm;
+  color: $color-status-danger;
+}
+
+.timeSlotScroll {
+  margin-bottom: $spacing-lg;
+  @include scroll-x-container;
+}
+
+.timeSlotList {
+  display: inline-flex;
+  gap: $spacing-sm;
+  @include scroll-x-container;
+}
+
+.timeSlotItem {
+  @include scroll-x-item(auto);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 100rpx;
+  padding: $spacing-sm $spacing-md;
+  background: $color-bg-card;
+  border-radius: $radius-button;
+  font-size: $font-size-sm;
+  color: $color-text-secondary;
+  border: 2rpx solid transparent;
+  transition: all $transition-base;
+  white-space: nowrap;
+
+  &.timeSlotActive {
+    background: rgba(22, 93, 255, 0.1);
+    color: $color-primary;
+    border-color: $color-primary;
+  }
+
+  &.timeSlotDisabled {
+    background: $color-bg-disabled;
+    color: $color-text-placeholder;
+    cursor: not-allowed;
+  }
+}

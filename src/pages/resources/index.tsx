@@ -207,8 +207,8 @@ const ResourcesPage: React.FC = () => {
                 asset={asset}
                 showAvailableStock={true}
                 date={selectedDate}
-                startTime={selectedTimeSlot !== 'all' ? timeSlots.find(s => s.id === selectedTimeSlot)?.startTime : undefined}
-                endTime={selectedTimeSlot !== 'all' ? timeSlots.find(s => s.id === selectedTimeSlot)?.endTime : undefined}
+                startTime={selectedTimeSlot !== 'all' ? timeSlots.find(s => s.id === selectedTimeSlot)?.startTime : '08:00'}
+                endTime={selectedTimeSlot !== 'all' ? timeSlots.find(s => s.id === selectedTimeSlot)?.endTime : '20:00'}
               />
             </View>
           ))

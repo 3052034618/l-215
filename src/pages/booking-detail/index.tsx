@@ -29,8 +29,8 @@ const BookingDetailPage: React.FC = () => {
 
   const modifyTimeSlots = useMemo(() => {
     if (!modifyDate || !booking) return [];
-    return generateTimeSlots(modifyDate, booking.assetId);
-  }, [modifyDate, booking, generateTimeSlots]);
+    return generateTimeSlots(modifyDate, booking.assetId, bookingId);
+  }, [modifyDate, booking, generateTimeSlots, bookingId]);
 
   useDidShow(() => {
     console.log('[BookingDetail] page show, bookingId:', bookingId);
@@ -171,7 +171,7 @@ const BookingDetailPage: React.FC = () => {
 
     const dateChanged = modifyDate !== booking.date || modifyStartTime !== booking.startTime || modifyEndTime !== booking.endTime;
     if (dateChanged) {
-      const available = isAssetAvailable(booking.assetId, modifyDate, modifyStartTime, modifyEndTime);
+      const available = isAssetAvailable(booking.assetId, modifyDate, modifyStartTime, modifyEndTime, bookingId);
       if (!available) {
         Taro.showToast({ title: '该时段资产已被预约', icon: 'none' });
         return;

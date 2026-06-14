@@ -14,7 +14,7 @@ interface BookingStore {
   currentUserName: string;
   currentUserDept: string;
 
-  generateTimeSlots: (date: string, assetId?: string) => TimeSlot[];
+  generateTimeSlots: (date: string, assetId?: string, excludeBookingId?: string) => TimeSlot[];
   isAssetAvailable: (assetId: string, date: string, startTime: string, endTime: string, excludeBookingId?: string) => boolean;
   isDateBlacklisted: (date: string) => boolean;
   isAssetUnderMaintenance: (assetId: string, date: string) => boolean;
@@ -76,7 +76,7 @@ export const useBookingStore = create<BookingStore>()(
       currentUserName: '张三',
       currentUserDept: '市场部',
 
-      generateTimeSlots: (date: string, assetId?: string): TimeSlot[] => {
+      generateTimeSlots: (date: string, assetId?: string, excludeBookingId?: string): TimeSlot[] => {
         const slots: TimeSlot[] = [];
         const { isDateBlacklisted } = get();
 
@@ -102,7 +102,7 @@ export const useBookingStore = create<BookingStore>()(
 
           let available = true;
           if (assetId) {
-            available = get().isAssetAvailable(assetId, date, startTime, endTime);
+            available = get().isAssetAvailable(assetId, date, startTime, endTime, excludeBookingId);
           }
 
           slots.push({

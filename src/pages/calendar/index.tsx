@@ -64,12 +64,10 @@ const CalendarPage: React.FC = () => {
     return assets.filter(a => {
       if (a.status === 'maintenance') return false;
       if (dateIsBlacklisted) return false;
-      if (selectedSlot) {
-        const slot = timeSlots.find(s => s.id === selectedSlot);
-        if (slot) {
-          return isAssetAvailable(a.id, dateStr, slot.startTime, slot.endTime);
-        }
-        return false;
+      if (!selectedSlot) return true;
+      const slot = timeSlots.find(s => s.id === selectedSlot);
+      if (slot) {
+        return isAssetAvailable(a.id, dateStr, slot.startTime, slot.endTime);
       }
       return true;
     });

@@ -23,6 +23,7 @@ const CalendarPage: React.FC = () => {
     getBookingsByDate,
     addBooking,
     isDateBlacklisted,
+    isAssetAvailable,
     blacklistDates,
     maintenanceRecords
   } = useBookingStore();
@@ -62,22 +63,23 @@ const CalendarPage: React.FC = () => {
   const availableAssets = useMemo(() => {
     return assets.filter(a => {
       if (a.status === 'maintenance') return false;
+      if (dateIsBlacklisted) return false;
       if (selectedSlot) {
         const slot = timeSlots.find(s => s.id === selectedSlot);
         if (slot) {
           return isAssetAvailable(a.id, dateStr, slot.startTime, slot.endTime);
         }
+        return false;
       }
       return true;
     });
-  }, [assets, selectedSlot, timeSlots, dateStr, isAssetAvailable]);
+  }, [assets, selectedSlot, timeSlots, dateStr, dateIsBlacklisted, isAssetAvailable]);
 
   const isAssetAvailableForSlot = (assetId: string) => {
     if (!selectedSlot) return true;
     const slot = timeSlots.find(s => s.id === selectedSlot);
     if (!slot) return false;
     if (dateIsBlacklisted) return false;
-    const { isAssetAvailable } = useBookingStore.getState();
     return isAssetAvailable(assetId, dateStr, slot.startTime, slot.endTime);
   };
 

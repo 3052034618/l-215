@@ -16,11 +16,12 @@ const ResourcesPage: React.FC = () => {
   const [selectedDate, setSelectedDate] = useState(formatDate(new Date()));
   const [selectedTimeSlot, setSelectedTimeSlot] = useState<string>('all');
   const [refreshing, setRefreshing] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
 
-  const { assets, generateTimeSlots, isAssetAvailable, isDateBlacklisted } = useBookingStore();
+  const { assets, generateTimeSlots, isAssetAvailable, isDateBlacklisted, isAssetUnderMaintenance } = useBookingStore();
 
   useDidShow(() => {
-    console.log('[Resources] page show');
+    setRefreshKey(prev => prev + 1);
   });
 
   usePullDownRefresh(() => {
@@ -33,11 +34,11 @@ const ResourcesPage: React.FC = () => {
 
   const timeSlots = useMemo(() => {
     return generateTimeSlots(selectedDate);
-  }, [selectedDate, generateTimeSlots]);
+  }, [selectedDate, generateTimeSlots, refreshKey]);
 
   const dateIsBlacklisted = useMemo(() => {
     return isDateBlacklisted(selectedDate);
-  }, [selectedDate, isDateBlacklisted]);
+  }, [selectedDate, isDateBlacklisted, refreshKey]);
 
   const filteredAssets = useMemo(() => {
     return assets.filter((asset) => {
@@ -55,6 +56,10 @@ const ResourcesPage: React.FC = () => {
         return false;
       }
 
+      if (isAssetUnderMaintenance(asset.id, selectedDate)) {
+        return false;
+      }
+
       if (selectedTimeSlot !== 'all') {
         const slot = timeSlots.find(s => s.id === selectedTimeSlot);
         if (slot) {
@@ -67,7 +72,7 @@ const ResourcesPage: React.FC = () => {
 
       return true;
     });
-  }, [assets, activeCategory, activeLocation, searchText, selectedDate, selectedTimeSlot, timeSlots, isAssetAvailable, dateIsBlacklisted]);
+  }, [assets, activeCategory, activeLocation, searchText, selectedDate, selectedTimeSlot, timeSlots, isAssetAvailable, isAssetUnderMaintenance, dateIsBlacklisted, refreshKey]);
 
   const handleDateChange = (e: any) => {
     setSelectedDate(e.detail.value);

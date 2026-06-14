@@ -35,6 +35,22 @@ const AssetCard: React.FC<AssetCardProps> = ({ asset, onClick, showAvailableStoc
     return getAvailableStock(asset.id, date, startTime, endTime);
   }, [asset, showAvailableStock, date, startTime, endTime, getAvailableStock, isAssetUnderMaintenance, isDateBlacklisted]);
 
+  const badgeStatus = useMemo(() => {
+    if (showAvailableStock && date) {
+      if (isDateBlacklisted(date)) {
+        return 'unavailable';
+      }
+      if (isAssetUnderMaintenance(asset.id, date)) {
+        return 'maintenance';
+      }
+      if (realtimeAvailable > 0) {
+        return 'available';
+      }
+      return 'borrowed';
+    }
+    return asset.status;
+  }, [asset, showAvailableStock, date, realtimeAvailable, isDateBlacklisted, isAssetUnderMaintenance]);
+
   const displayStatus = useMemo(() => {
     if (showAvailableStock && date) {
       if (isDateBlacklisted(date)) {
@@ -69,7 +85,7 @@ const AssetCard: React.FC<AssetCardProps> = ({ asset, onClick, showAvailableStoc
           <View className={styles.header}>
             <Text className={styles.name}>{asset.name}</Text>
             <StatusBadge
-              status={realtimeAvailable > 0 || !showAvailableStock ? asset.status : 'borrowed'}
+              status={badgeStatus}
               text={displayStatus}
             />
           </View>

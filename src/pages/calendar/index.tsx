@@ -56,25 +56,21 @@ const CalendarPage: React.FC = () => {
   const disabledDates = useMemo(() => {
     const dates: string[] = [];
     blacklistDates.forEach(bl => dates.push(bl.date));
-    maintenanceRecords
-      .filter(m => m.status === 'ongoing')
-      .forEach(m => {
-        const start = new Date(m.startDate);
-        const end = new Date(m.endDate);
-        for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-          dates.push(formatDate(d));
-        }
-      });
     return dates;
-  }, [blacklistDates, maintenanceRecords]);
+  }, [blacklistDates]);
 
   const availableAssets = useMemo(() => {
-    const slot = timeSlots.find(s => s.id === selectedSlot);
-    if (!slot && selectedSlot) {
-      return assets.filter(a => a.status !== 'maintenance');
-    }
-    return assets.filter(a => a.status !== 'maintenance');
-  }, [assets, selectedSlot, timeSlots]);
+    return assets.filter(a => {
+      if (a.status === 'maintenance') return false;
+      if (selectedSlot) {
+        const slot = timeSlots.find(s => s.id === selectedSlot);
+        if (slot) {
+          return isAssetAvailable(a.id, dateStr, slot.startTime, slot.endTime);
+        }
+      }
+      return true;
+    });
+  }, [assets, selectedSlot, timeSlots, dateStr, isAssetAvailable]);
 
   const isAssetAvailableForSlot = (assetId: string) => {
     if (!selectedSlot) return true;

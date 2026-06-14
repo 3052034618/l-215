@@ -15,10 +15,10 @@ interface BookingStore {
   currentUserDept: string;
 
   generateTimeSlots: (date: string, assetId?: string) => TimeSlot[];
-  isAssetAvailable: (assetId: string, date: string, startTime: string, endTime: string) => boolean;
+  isAssetAvailable: (assetId: string, date: string, startTime: string, endTime: string, excludeBookingId?: string) => boolean;
   isDateBlacklisted: (date: string) => boolean;
   isAssetUnderMaintenance: (assetId: string, date: string) => boolean;
-  getAvailableStock: (assetId: string, date: string, startTime: string, endTime: string) => number;
+  getAvailableStock: (assetId: string, date: string, startTime: string, endTime: string, excludeBookingId?: string) => number;
   getBookingsByUser: (userId: string) => Booking[];
   getBookingsByDate: (date: string) => Booking[];
   getPendingApprovals: () => Booking[];
@@ -115,8 +115,8 @@ export const useBookingStore = create<BookingStore>()(
         return slots;
       },
 
-      isAssetAvailable: (assetId: string, date: string, startTime: string, endTime: string): boolean => {
-        const { assets, bookings, isDateBlacklisted, isAssetUnderMaintenance, getAvailableStock } = get();
+      isAssetAvailable: (assetId: string, date: string, startTime: string, endTime: string, excludeBookingId?: string): boolean => {
+        const { assets, isDateBlacklisted, isAssetUnderMaintenance, getAvailableStock } = get();
 
         if (isDateBlacklisted(date)) return false;
         if (isAssetUnderMaintenance(assetId, date)) return false;
@@ -125,7 +125,7 @@ export const useBookingStore = create<BookingStore>()(
         if (!asset) return false;
         if (asset.status === 'maintenance') return false;
 
-        const stock = getAvailableStock(assetId, date, startTime, endTime);
+        const stock = getAvailableStock(assetId, date, startTime, endTime, excludeBookingId);
         return stock > 0;
       },
 
@@ -144,7 +144,7 @@ export const useBookingStore = create<BookingStore>()(
         );
       },
 
-      getAvailableStock: (assetId: string, date: string, startTime: string, endTime: string): number => {
+      getAvailableStock: (assetId: string, date: string, startTime: string, endTime: string, excludeBookingId?: string): number => {
         const { assets, bookings } = get();
         const asset = assets.find(a => a.id === assetId);
         if (!asset) return 0;
@@ -152,6 +152,7 @@ export const useBookingStore = create<BookingStore>()(
         const overlappingBookings = bookings.filter(b =>
           b.assetId === assetId &&
           b.date === date &&
+          b.id !== excludeBookingId &&
           b.status !== 'cancelled' &&
           b.status !== 'rejected' &&
           b.status !== 'returned' &&
@@ -227,12 +228,13 @@ export const useBookingStore = create<BookingStore>()(
           return false;
         }
 
-        if (data.date || data.startTime || data.endTime) {
+        const onlyPurpose = !data.date && !data.startTime && !data.endTime && !!data.purpose;
+        if (!onlyPurpose && (data.date || data.startTime || data.endTime)) {
           const newDate = data.date || booking.date;
           const newStartTime = data.startTime || booking.startTime;
           const newEndTime = data.endTime || booking.endTime;
 
-          const available = get().isAssetAvailable(booking.assetId, newDate, newStartTime, newEndTime);
+          const available = get().isAssetAvailable(booking.assetId, newDate, newStartTime, newEndTime, id);
           if (!available) return false;
         }
 

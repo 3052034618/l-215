@@ -1,9 +1,9 @@
 import React, { useState, useMemo } from 'react';
-import { View, Text, ScrollView } from '@tarojs/components';
+import { View, Text, ScrollView, Button, Picker, Textarea } from '@tarojs/components';
 import Taro, { useDidShow } from '@tarojs/taro';
 import classnames from 'classnames';
 import BookingCard from '@/components/BookingCard';
-import { BookingStatus } from '@/types/booking';
+import { BookingStatus, Booking } from '@/types/booking';
 import { useBookingStore } from '@/store';
 import styles from './index.module.scss';
 
@@ -22,7 +22,13 @@ const RecordsPage: React.FC = () => {
   const [activeTab, setActiveTab] = useState<TabType>('all');
   const [refreshKey, setRefreshKey] = useState(0);
 
-  const { bookings, currentUserId, currentUserName, currentUserDept, cancelBooking } = useBookingStore();
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editDate, setEditDate] = useState('');
+  const [editStartTime, setEditStartTime] = useState('');
+  const [editEndTime, setEditEndTime] = useState('');
+  const [editPurpose, setEditPurpose] = useState('');
+
+  const { bookings, currentUserId, currentUserName, currentUserDept, cancelBooking, updateBooking, generateTimeSlots } = useBookingStore();
 
   useDidShow(() => {
     setRefreshKey(prev => prev + 1);
@@ -49,6 +55,15 @@ const RecordsPage: React.FC = () => {
     return myBookings.filter((b) => b.status === 'overdue');
   }, [myBookings]);
 
+  const timeSlotOptions = useMemo(() => {
+    const slots: string[] = [];
+    for (let h = 8; h < 20; h++) {
+      slots.push(`${h.toString().padStart(2, '0')}:00`);
+    }
+    slots.push('20:00');
+    return slots;
+  }, []);
+
   const handleCancel = (bookingId: string) => {
     Taro.showModal({
       title: '确认取消',
@@ -59,6 +74,9 @@ const RecordsPage: React.FC = () => {
           if (success) {
             Taro.showToast({ title: '已取消预约', icon: 'success' });
             setRefreshKey(prev => prev + 1);
+            if (editingId === bookingId) {
+              setEditingId(null);
+            }
           } else {
             Taro.showToast({ title: '取消失败', icon: 'none' });
           }
@@ -76,9 +94,131 @@ const RecordsPage: React.FC = () => {
   };
 
   const handleBookingClick = (bookingId: string) => {
+    if (editingId) {
+      setEditingId(null);
+      return;
+    }
     Taro.navigateTo({
       url: `/pages/booking-detail/index?id=${bookingId}`
     });
+  };
+
+  const handleStartEdit = (e: React.MouseEvent, booking: Booking) => {
+    e.stopPropagation();
+    setEditingId(booking.id);
+    setEditDate(booking.date);
+    setEditStartTime(booking.startTime);
+    setEditEndTime(booking.endTime);
+    setEditPurpose(booking.purpose);
+  };
+
+  const handleCancelEdit = () => {
+    setEditingId(null);
+  };
+
+  const handleSaveEdit = () => {
+    if (!editingId) return;
+
+    if (!editPurpose.trim()) {
+      Taro.showToast({ title: '请填写用途', icon: 'none' });
+      return;
+    }
+
+    const startH = parseInt(editStartTime);
+    const endH = parseInt(editEndTime);
+    if (endH <= startH) {
+      Taro.showToast({ title: '结束时间需晚于开始时间', icon: 'none' });
+      return;
+    }
+
+    const success = updateBooking(editingId, {
+      date: editDate,
+      startTime: editStartTime,
+      endTime: editEndTime,
+      purpose: editPurpose.trim()
+    });
+
+    if (success) {
+      Taro.showToast({ title: '保存成功', icon: 'success' });
+      setEditingId(null);
+      setRefreshKey(prev => prev + 1);
+    } else {
+      Taro.showToast({ title: '该时段已被占用，请换个时间', icon: 'none' });
+    }
+  };
+
+  const canEdit = (booking: Booking) => {
+    return booking.status === 'pending' || booking.status === 'approved';
+  };
+
+  const renderEditForm = (booking: Booking) => {
+    if (editingId !== booking.id) return null;
+
+    return (
+      <View className={styles.editForm} onClick={(e) => e.stopPropagation()}>
+        <View className={styles.editTitle}>
+          <Text className={styles.editTitleText}>修改预约</Text>
+        </View>
+
+        <View className={styles.formGroup}>
+          <Text className={styles.formLabel}>预约日期</Text>
+          <Picker mode="date" value={editDate} onChange={(e) => setEditDate(e.detail.value)}>
+            <View className={styles.formInput}>
+              <Text>{editDate}</Text>
+            </View>
+          </Picker>
+        </View>
+
+        <View className={styles.formRow}>
+          <View className={styles.formGroupHalf}>
+            <Text className={styles.formLabel}>开始时间</Text>
+            <Picker
+              mode="selector"
+              range={timeSlotOptions.slice(0, -1)}
+              value={timeSlotOptions.indexOf(editStartTime)}
+              onChange={(e) => setEditStartTime(timeSlotOptions[e.detail.value])}
+            >
+              <View className={styles.formInput}>
+                <Text>{editStartTime}</Text>
+              </View>
+            </Picker>
+          </View>
+          <View className={styles.formGroupHalf}>
+            <Text className={styles.formLabel}>结束时间</Text>
+            <Picker
+              mode="selector"
+              range={timeSlotOptions.slice(1)}
+              value={timeSlotOptions.slice(1).indexOf(editEndTime)}
+              onChange={(e) => setEditEndTime(timeSlotOptions.slice(1)[e.detail.value])}
+            >
+              <View className={styles.formInput}>
+                <Text>{editEndTime}</Text>
+              </View>
+            </Picker>
+          </View>
+        </View>
+
+        <View className={styles.formGroup}>
+          <Text className={styles.formLabel}>使用用途</Text>
+          <Textarea
+            className={styles.formTextarea}
+            placeholder="请输入使用用途..."
+            value={editPurpose}
+            onInput={(e) => setEditPurpose(e.detail.value)}
+            maxlength={200}
+          />
+        </View>
+
+        <View className={styles.editActions}>
+          <Button className={styles.cancelBtn} onClick={handleCancelEdit}>
+            取消
+          </Button>
+          <Button className={styles.saveBtn} onClick={handleSaveEdit}>
+            保存
+          </Button>
+        </View>
+      </View>
+    );
   };
 
   return (
@@ -130,13 +270,27 @@ const RecordsPage: React.FC = () => {
       <View className={styles.bookingList}>
         {filteredBookings.length > 0 ? (
           filteredBookings.map((booking) => (
-            <View key={booking.id} onClick={() => handleBookingClick(booking.id)}>
-              <BookingCard
-                booking={booking}
-                onPickup={handlePickup}
-                onReturn={handleReturn}
-                onCancel={() => handleCancel(booking.id)}
-              />
+            <View key={booking.id}>
+              <View onClick={() => handleBookingClick(booking.id)}>
+                <BookingCard
+                  booking={booking}
+                  showActions={editingId !== booking.id}
+                  onPickup={handlePickup}
+                  onReturn={handleReturn}
+                  onCancel={() => handleCancel(booking.id)}
+                />
+              </View>
+              {canEdit(booking) && editingId !== booking.id && (
+                <View className={styles.inlineActions}>
+                  <Button
+                    className={classnames(styles.inlineActionBtn, styles.editBtn)}
+                    onClick={(e) => handleStartEdit(e, booking)}
+                  >
+                    ✏️ 修改预约
+                  </Button>
+                </View>
+              )}
+              {renderEditForm(booking)}
             </View>
           ))
         ) : (

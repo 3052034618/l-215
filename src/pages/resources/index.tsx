@@ -75,8 +75,11 @@ const ResourcesPage: React.FC = () => {
   };
 
   const handleAssetClick = (assetId: string) => {
+    const slot = timeSlots.find(s => s.id === selectedTimeSlot);
+    const startTime = slot ? slot.startTime : '08:00';
+    const endTime = slot ? slot.endTime : '20:00';
     Taro.navigateTo({
-      url: `/pages/detail/index?id=${assetId}&date=${selectedDate}&timeSlot=${selectedTimeSlot}`
+      url: `/pages/detail/index?id=${assetId}&date=${selectedDate}&startTime=${startTime}&endTime=${endTime}`
     });
   };
 
